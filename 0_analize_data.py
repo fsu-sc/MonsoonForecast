@@ -17,6 +17,14 @@ ds['mslp'].plot()
 plt.show()
 ds.close()
 
+#mlsp plot of just Florida Region
+ds_flor = ds.sel(latitude=slice(22, 32), longitude=slice(275,280))
+#print(ds_flor['mslp'])
+ds_flor['mslp'].plot()
+plt.show()
+ds_flor.close()
+
+
 #plotting t2m distribution for t2m file of the same year
 ds = xr.open_dataset('/Net/elnino/data/obs/ERA5/global/daily/t2m_era5_day_2002.nc')
 print(ds['t2m'])
@@ -24,12 +32,43 @@ ds['t2m'].plot()
 plt.show()
 ds.close()
 
+#t2m plot of just Florida Region
+ds_flor = ds.sel(latitude=slice(22, 32), longitude=slice(275,280))
+ds_flor['t2m'].plot()
+plt.show()
+ds_flor.close()
+
+
 #plotting u200 distribution of u200 file of the same year
 ds = xr.open_dataset('/Net/elnino/data/obs/ERA5/global/daily/u200_era5_day_2002.nc')
 print(ds['u200'])
 ds['u200'].plot()
 plt.show()
 ds.close()
+
+
+#plotting u850 distr of the same year
+ds = xr.open_dataset('/Net/elnino/data/obs/ERA5/global/daily/u850_era5_day_2002.nc')
+#print(ds['u850'])
+ds['u850'].plot()
+plt.show()
+ds.close()
+
+#plotting v200 distr of the same year
+ds = xr.open_dataset('/Net/elnino/data/obs/ERA5/global/daily/v200_era5_day_2002.nc')
+#print(ds['v200'])
+ds['v200'].plot()
+plt.show()
+ds.close()
+
+#plotting v850 distr of the same year
+ds = xr.open_dataset('/Net/elnino/data/obs/ERA5/global/daily/v850_era5_day_2002.nc')
+#print(ds['v850'])
+ds['v850'].plot()
+plt.show()
+ds.close()
+
+
 
 
 #Demonstrating File Sizes
