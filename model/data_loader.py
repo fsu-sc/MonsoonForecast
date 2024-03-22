@@ -90,24 +90,26 @@ class NetCDFDataset(Dataset):
     def __init__(self, file_dict, data_dir):
         self.file_dict = file_dict
         self.data_dir = data_dir
+        self.latitude_slice = slice(24, 33)  
+        self.longitude_slice = slice(272,282)  
    
     def __len__(self):
         return len(self.file_dict)
 
-    def __getitem__(self, year, offset):
+    def __getitem__(self, yr_offset_pair):
+        year, offset = yr_offset_pair
+
         onset = onset_mask_df.loc[onset_mask_df['Year'] == year, 'OnsetDay'].iloc[0]
         msk_date = day_of_year_to_date(year, onset)
         end_date = date_subtract(msk_date, offset)
         start_date = date_subtract(end_date, 5)
 
         time_slice = slice(start_date, end_date)
-        latitude_slice = slice(24, 33)  
-        longitude_slice = slice(272,282)  
      
         datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[year].iloc[i]['filename']),)
                                             for i in range(len(self.file_dict[year]))]
         merged_ds = xr.merge(datasets)
-        merged_ds = merged_ds.sel(time=time_slice, latitude=latitude_slice, longitude=longitude_slice)
+        merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
         
         # Concatenate all variables into one tensor
         variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']  # Specify the variable names in your dataset
