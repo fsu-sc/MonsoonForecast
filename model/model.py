@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F 
 
 class EnhancedCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, channels = 6):
         super(EnhancedCNN, self).__init__()
-        self.conv1 = nn.Conv3d(in_channels=6, out_channels=16, kernel_size=(3, 3, 3), padding=1)
+        self.conv1 = nn.Conv3d(in_channels=channels, out_channels=16, kernel_size=(3, 3, 3), padding=1)
         self.bn1 = nn.BatchNorm3d(16)
         self.conv2 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=(3, 3, 3), padding=1)
         self.bn2 = nn.BatchNorm3d(32)

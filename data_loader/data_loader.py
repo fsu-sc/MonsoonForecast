@@ -87,33 +87,37 @@ def normalize_tensor(tensor):
     return normalized_tensor
 
 class NetCDFDataset(Dataset):
-    def __init__(self, file_dict, data_dir):
+    def __init__(self, file_dict, data_dir, variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']):
         self.file_dict = file_dict
         self.data_dir = data_dir
-   
+        self.latitude_slice = slice(24, 33)  
+        self.longitude_slice = slice(272,282)  
+        self.variables = variables
+
     def __len__(self):
         return len(self.file_dict)
 
-    def __getitem__(self, year, offset):
+    def __getitem__(self, yr_offset_pair):
+        year, offset = yr_offset_pair
+
         onset = onset_mask_df.loc[onset_mask_df['Year'] == year, 'OnsetDay'].iloc[0]
         msk_date = day_of_year_to_date(year, onset)
         end_date = date_subtract(msk_date, offset)
         start_date = date_subtract(end_date, 5)
 
         time_slice = slice(start_date, end_date)
-        latitude_slice = slice(24, 33)  
-        longitude_slice = slice(272,282)  
      
         datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[year].iloc[i]['filename']),)
                                             for i in range(len(self.file_dict[year]))]
         merged_ds = xr.merge(datasets)
-        merged_ds = merged_ds.sel(time=time_slice, latitude=latitude_slice, longitude=longitude_slice)
+        merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
         
         # Concatenate all variables into one tensor
-        variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']  # Specify the variable names in your dataset
+        #variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']  # Specify the variable names in your dataset
+        
         
         # Extract values from the xarray dataset and concatenate them along a new dimension
-        tensor_values = [merged_ds[var].values for var in merged_ds.data_vars]
+        tensor_values = [merged_ds[var].values for var in merged_ds.data_vars if var in self.variables]
         tensor_values = np.stack(tensor_values, axis=-1)
     
     
@@ -122,18 +126,7 @@ class NetCDFDataset(Dataset):
     
         # Normalize the tensor
         normalized_tensor = normalize_tensor(tensor)
+        permuted_tensor = normalized_tensor.permute(3, 0, 1, 2)
         #print("Norm Tens Shape:", normalized_tensor.shape)
     
-        return [normalized_tensor, onset]
-        # Append the onset mask date as a value to the tensor
-        #onset_mask_tensor = torch.tensor(onset, dtype=torch.int)
-        #print("Onset Tens Shape:", onset_mask_tensor.shape)
-        #print(onset_mask_tensor)
-        #print("Shape 3:", torch.tensor([onset_mask_tensor, normalized_tensor]).shape)
-        #tensor_with_mask = torch.cat([onset_mask_tensor.unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0), normalized_tensor], dim=0)
-    
-       #return tensor_with_mask
-    
-    #def get_batch():
-
-        #return batch
+        return [permuted_tensor, onset]
