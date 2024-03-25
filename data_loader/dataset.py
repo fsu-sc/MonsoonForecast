@@ -2,27 +2,27 @@ import os
 import xarray as xr
 import pandas as pd
 
-def createFileInfoDict(data_dir):
-    #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-    all_files = os.listdir(data_dir)
-    file_info_dict = {}
+# def createFileInfoDict(data_dir):
+#     #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
+#     all_files = os.listdir(data_dir)
+#     file_info_dict = {}
 
 
-    for filename in all_files:
+#     for filename in all_files:
 
-        parts = filename.split("_")
-        year = int(parts[-1].split(".")[0])
-        variable = parts[0]
+#         parts = filename.split("_")
+#         year = int(parts[-1].split(".")[0])
+#         variable = parts[0]
     
-        # If the year is not already a key in the dictionary, initialize an empty DataFrame
-        if year not in file_info_dict:
-            file_info_dict[year] = pd.DataFrame(columns=["filename", "variable"])
+#         # If the year is not already a key in the dictionary, initialize an empty DataFrame
+#         if year not in file_info_dict:
+#             file_info_dict[year] = pd.DataFrame(columns=["filename", "variable"])
     
-        # Append information to the DataFrame associated with the year
-        new_df = pd.DataFrame({"filename": [filename], "variable": [variable]})
-        file_info_dict[year] = pd.concat([file_info_dict[year], new_df], ignore_index=True)
+#         # Append information to the DataFrame associated with the year
+#         new_df = pd.DataFrame({"filename": [filename], "variable": [variable]})
+#         file_info_dict[year] = pd.concat([file_info_dict[year], new_df], ignore_index=True)
     
-    return file_info_dict
+#     return file_info_dict
 
 #---
 
@@ -87,19 +87,47 @@ def normalize_tensor(tensor):
     return normalized_tensor
 
 class NetCDFDataset(Dataset):
-    def __init__(self, file_dict, data_dir, 
+    
+    def __init__(self, data_dir, 
                  years, offsets, 
                  variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850'],):
-        self.file_dict = file_dict
         self.data_dir = data_dir
+        self.file_dict = self.createFileInfoDict()  # Create a dictionary of file information while loading
+        self.offsets = offsets
+        self.years = years
         self.latitude_slice = slice(24, 33)  
         self.longitude_slice = slice(272,282)  
         self.variables = variables
         self.x = []
         self.y = []
         self.xy_dict = {}
-        for yr in years:
-            for off in offsets:
+        self.load_data = self.load_data()
+       
+    def createFileInfoDict(self):
+    #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
+        all_files = os.listdir(self.data_dir)
+        file_info_dict = {}
+
+
+        for filename in all_files:
+
+            parts = filename.split("_")
+            year = int(parts[-1].split(".")[0])
+            variable = parts[0]
+        
+            # If the year is not already a key in the dictionary, initialize an empty DataFrame
+            if year not in file_info_dict:
+                file_info_dict[year] = pd.DataFrame(columns=["filename", "variable"])
+        
+            # Append information to the DataFrame associated with the year
+            new_df = pd.DataFrame({"filename": [filename], "variable": [variable]})
+            file_info_dict[year] = pd.concat([file_info_dict[year], new_df], ignore_index=True)
+        
+        return file_info_dict
+    
+    def load_data(self):
+        for yr in self.years:
+            for off in self.offsets:
                 onset = onset_mask_df.loc[onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
                 msk_date = day_of_year_to_date(yr, onset)
                 end_date = date_subtract(msk_date, off)
@@ -127,16 +155,15 @@ class NetCDFDataset(Dataset):
                 #print("Norm Tens Shape:", normalized_tensor.shape)
             
                 x_sing = normalized_tensor
-                y_sing = onset
+                y_sing = torch.tensor(onset, dtype=torch.float32)
                 xy_sing = [normalized_tensor, onset]
                 self.x.append(x_sing)
                 self.y.append(y_sing)
-                self.xy_dict[(yr, off)] = xy_sing
-                
+                self.xy_dict[(yr, off)] = [normalized_tensor, torch.tensor(onset, dtype=torch.float32)]
 
     def __len__(self):
-        return len(self.x)
+        return len(self.xy_dict)
 
-    def __getitem__(self, yr_offset_pair):
-        year, offset = yr_offset_pair
+    def __getitem__(self, index):
+        year, offset = list(self.xy_dict.keys())[index]
         return self.xy_dict[(year, offset)]
