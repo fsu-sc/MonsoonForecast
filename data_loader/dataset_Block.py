@@ -4,6 +4,7 @@ import pandas as pd
 import random 
 from torchvision.transforms import Resize, Compose, ToTensor
 from torchvision.transforms.functional import to_pil_image, to_tensor
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 # def createFileInfoDict(data_dir):
 #     #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
 #     all_files = os.listdir(data_dir)
@@ -152,57 +153,17 @@ class NetCDFDataset(Dataset):
             normalized_tensor = normalize_tensor(tensor)
             normalized_tensor = normalized_tensor.permute(1,0,2,3)
             self.block_dict[yr] = [normalized_tensor, onset_tensor]
-            
-            
-            # return self.samples_dict
-    # def load_data(self):
-    #     samples = []
-    #     for yr in self.years:
-    #         for off in self.offsets:
-    #             onset = self.onset_mask_df.loc[self.onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
-    #             msk_date =day_of_year_to_date(yr, onset)
-    #             end_date = date_subtract(msk_date, off)
-    #             start_date = date_subtract(end_date, 5)
-    #             time_slice = slice(start_date, end_date)
-
-    #             datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[yr].iloc[i]['filename']))
-    #                         for i in range(len(self.file_dict[yr]))]
-    #             merged_ds = xr.merge(datasets).sel(time=time_slice)
-
-    #             # Tokenize each variable
-    #             for var in self.variables:
-    #                 if var in merged_ds.data_vars:
-    #                     var_data = merged_ds[var].values  # Assuming shape: time x latitude x longitude
-    #                     # Iterate over the spatial dimensions
-    #                     for i in range(0, var_data.shape[1], self.patch_size[0]):  # latitude
-    #                         for j in range(0, var_data.shape[2], self.patch_size[1]):  # longitude
-    #                             # Check if the patch needs padding
-    #                             pad_height = 0 if i + self.patch_size[0] <= var_data.shape[1] else self.patch_size[0] - (var_data.shape[1] - i)
-    #                             pad_width = 0 if j + self.patch_size[1] <= var_data.shape[2] else self.patch_size[1] - (var_data.shape[2] - j)
-
-    #                             patch = var_data[:, i:i + self.patch_size[0], j:j + self.patch_size[1]]
-
-    #                             if pad_height > 0 or pad_width > 0:
-    #                                 # Pad the patch if necessary
-    #                                 patch = np.pad(patch, ((0, 0), (0, pad_height), (0, pad_width)), mode='constant', constant_values=0)
-
-    #                             # Flatten and convert the patch to tensor
-    #                             # patch_tensor = torch.tensor(patch.flatten(), dtype=torch.float32)
-    #                             patch_tensor = torch.tensor(patch, dtype=torch.float32)
-    #                             samples.append((patch_tensor, torch.tensor(onset, dtype=torch.float32)))
-
-        # self.samples = samples
-        # return self.samples
-        
 
     def __len__(self):
-        return len(self.samples_dict)
+        return len(self.block_dict)
 
-    def __getitem__(self, yr, off): #will add offset as an arg probably
+    def __getitem__(self, yr_off_tuple): #idx is offset
+        yr, off = yr_off_tuple
         shape = self.block_dict[yr][0].shape[0]
         slice_b = shape - off + 1
         slice_a = slice_b - 6
-        return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], self.block_dict[yr][1])
+        #return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], self.block_dict[yr][1])
+        return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], off)
         # return self.samples[index]
         # normalized_tensor, onset = self.samples[index]
         # return normalized_tensor, onset
@@ -219,13 +180,25 @@ class NetCDFDataset(Dataset):
 data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
 year = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019]
 offsets = range(1,13)
+
+ds_indices =  [(yr, off) for yr in year for off in offsets]
+
 print("Landmark before dataset init")        
 ds = NetCDFDataset(data_dir, year, offsets)
 print("Landmark before getitem call")
-print("Sample get item output: ", ds.__getitem__(2002, 5))
+#print("Sample get item output: ", ds.__getitem__(2002, 5))
 
-#for i in range(1, 13, 3):
+ds_sampler = SubsetRandomSampler(ds_indices)
+ds_loader = DataLoader(ds, batch_size=8, sampler=ds_sampler)
+
+
+count = 0
+for inputs, targets in ds_loader:
+        count+=1
+print("Count: ", count)
+#for i in range(1, 25, 2):
 #    ds.__getitem__(2002, i)
 #    print(i)
 
-#print("nothing")
+
+print("nothing")
