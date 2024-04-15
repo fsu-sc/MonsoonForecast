@@ -5,29 +5,7 @@ import random
 from torchvision.transforms import Resize, Compose, ToTensor
 from torchvision.transforms.functional import to_pil_image, to_tensor
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
-# def createFileInfoDict(data_dir):
-#     #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-#     all_files = os.listdir(data_dir)
-#     file_info_dict = {}
 
-
-#     for filename in all_files:
-
-#         parts = filename.split("_")
-#         year = int(parts[-1].split(".")[0])
-#         variable = parts[0]
-    
-#         # If the year is not already a key in the dictionary, initialize an empty DataFrame
-#         if year not in file_info_dict:
-#             file_info_dict[year] = pd.DataFrame(columns=["filename", "variable"])
-    
-#         # Append information to the DataFrame associated with the year
-#         new_df = pd.DataFrame({"filename": [filename], "variable": [variable]})
-#         file_info_dict[year] = pd.concat([file_info_dict[year], new_df], ignore_index=True)
-    
-#     return file_info_dict
-
-#---
 
 from datetime import datetime, timedelta
 onset_mask_df = pd.read_csv("/unity/f2/aoleksy/MonsoonForecast/onset_pen_FL.csv", names=['Year','OnsetDay'])
@@ -99,6 +77,7 @@ class NetCDFDataset(Dataset):
         self.offsets = offsets
         self.years = years
         self.onset_mask_df = pd.read_csv("/unity/f2/aoleksy/MonsoonForecast/onset_pen_FL.csv", names=['Year', 'OnsetDay'])
+        self.climato_tensor = torch.load('/unity/f2/aoleksy/MonsoonForecast2/MonsoonForecast/climato_tensor.pt')
         self.latitude_slice = slice(24, 33)  
         self.longitude_slice = slice(272,282)  
         self.variables = variables
@@ -109,6 +88,10 @@ class NetCDFDataset(Dataset):
         self.samples_dict = {}
         self.xy_dict = {}
         self.block_dict = {}
+
+        if 'tp' in self.variables:
+            self.tp_idx = self.variables.index('tp')
+
         self.load_data = self.load_data()
         
        
@@ -140,30 +123,38 @@ class NetCDFDataset(Dataset):
             onset = onset_mask_df.loc[onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
             onset_tensor = torch.tensor(onset, dtype=torch.float32)
             msk_date = day_of_year_to_date(yr, onset)
-            min_start_date = date_subtract(msk_date, (max(self.offsets) + 5))
+            min_start_date = date_subtract(msk_date, (max(self.offsets) + 15))
+            #trying different window lengths: 16 days
             max_end_date = date_subtract(msk_date, min(self.offsets))
-            time_slice = slice(min_start_date, max_end_date)
+            time_slice = slice(min_start_date, max_end_date) #+1?
             datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[yr].iloc[i]['filename']),)
                                                     for i in range(len(self.file_dict[yr]))]
             merged_ds = xr.merge(datasets)
-            merged_ds =  merged_ds.sel(time=time_slice)
+            merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
             tensor_values = [merged_ds[var].values for var in merged_ds.data_vars if var in self.variables]
             tensor_values = np.stack(tensor_values, axis=0)
             tensor = torch.tensor(tensor_values, dtype=torch.float32)
             normalized_tensor = normalize_tensor(tensor)
             normalized_tensor = normalized_tensor.permute(1,0,2,3)
+            tp_tensor = tensor[:, self.tp_idx, :, :]
+            climate_slice = slice((onset - max(self.offsets) - 15), (onset - min(self.offsets) + 1))
+            anom_tensor = tp_tensor - self.climato_tensor[climate_slice, :, :, :]
+            normalized_tensor = torch.cat((normalized_tensor, anom_tensor), dim = 1)
             self.block_dict[yr] = [normalized_tensor, onset_tensor]
+            #tensor = tensor.permute(1,0,2,3)
+            #self.block_dict[yr] = [tensor, onset_tensor]
 
     def __len__(self):
         return len(self.block_dict)
 
     def __getitem__(self, yr_off_tuple): #idx is offset
         yr, off = yr_off_tuple
+        off_tensor = torch.tensor(off, dtype=torch.float32)
         shape = self.block_dict[yr][0].shape[0]
         slice_b = shape - off + 1
-        slice_a = slice_b - 6
+        slice_a = slice_b - 16
         #return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], self.block_dict[yr][1])
-        return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], off)
+        return (self.block_dict[yr][0][slice_a:slice_b, :, :, :], off_tensor)
         # return self.samples[index]
         # normalized_tensor, onset = self.samples[index]
         # return normalized_tensor, onset
@@ -177,28 +168,28 @@ class NetCDFDataset(Dataset):
             yield torch.stack(x_batch), torch.stack(y_batch)
             
 
-data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-year = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019]
-offsets = range(1,13)
+#data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
+#year = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019]
+#offsets = range(1,25)
 
-ds_indices =  [(yr, off) for yr in year for off in offsets]
+#ds_indices =  [(yr, off) for yr in year for off in offsets]
 
-print("Landmark before dataset init")        
-ds = NetCDFDataset(data_dir, year, offsets)
-print("Landmark before getitem call")
+#print("Landmark before dataset init")        
+#ds = NetCDFDataset(data_dir, year, offsets)
+#print("Landmark before getitem call")
 #print("Sample get item output: ", ds.__getitem__(2002, 5))
 
-ds_sampler = SubsetRandomSampler(ds_indices)
-ds_loader = DataLoader(ds, batch_size=8, sampler=ds_sampler)
+#ds_sampler = SubsetRandomSampler(ds_indices)
+#ds_loader = DataLoader(ds, batch_size=8, sampler=ds_sampler)
 
 
-count = 0
-for inputs, targets in ds_loader:
-        count+=1
-print("Count: ", count)
+#count = 0
+#for inputs, targets in ds_loader:
+#        count+=1
+#print("Count: ", count)
 #for i in range(1, 25, 2):
 #    ds.__getitem__(2002, i)
 #    print(i)
 
 
-print("nothing")
+#print("nothing")
