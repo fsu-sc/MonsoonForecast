@@ -24,20 +24,20 @@ offsets =[1,2,3,4,5,6,7,8,9,10,11,12]
 
 variables = ['tp']
 
-train_data = ds.NetCDFDataset(data_dir,year,offsets, variables)
+# train_data = ds.NetCDFDataset(data_dir,year,offsets, variables)
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, SubsetRandomSampler
+# import torch
+# import torch.nn as nn
+# import torch.optim as optim
+# from torch.utils.data import DataLoader, SubsetRandomSampler
 
-tensor_to_agg = train_data.__getitem__((2008, 12))[0]
-print("done")
+# tensor_to_agg, _= train_data.__getitem__((2008, 12))[0]
+# print("done")
 
-mean_tensor = torch.mean(tensor_to_agg, dim=(2, 3))
-#cumulative_tensor = torch.cumsum(tensor_to_agg, dim=(2, 3))
+# mean_tensor = torch.mean(tensor_to_agg, dim=(2, 3))
+# #cumulative_tensor = torch.cumsum(tensor_to_agg, dim=(2, 3))
 
-print(mean_tensor.shape)
+# print(mean_tensor.shape)
 
 
 
@@ -50,11 +50,11 @@ import cartopy.crs as ccrs
 import numpy as np
 import pandas as pd
 
-def normalize_tensor(tensor):
-    mean = tensor.mean(dim=(0, 1, 2), keepdim=True)
-    std = tensor.std(dim=(0, 1, 2), keepdim=True)
-    normalized_tensor = (tensor - mean) / std
-    return normalized_tensor
+# def normalize_tensor(tensor):
+#     mean = tensor.mean(dim=(0, 1, 2), keepdim=True)
+#     std = tensor.std(dim=(0, 1, 2), keepdim=True)
+#     normalized_tensor = (tensor - mean) / std
+#     return normalized_tensor
 
 def createFileInfoDict(data_dir):
 #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
@@ -90,12 +90,12 @@ for yr in range(1990,2021):
     datasets = [xr.open_dataset(os.path.join(data_dir, file_dict[yr].iloc[i]['filename']),)
                                                         for i in range(len(file_dict[yr]))]
     merged_ds = xr.merge(datasets)
-    merged_ds = merged_ds.sel(latitude=slice(24, 33), longitude=slice(272,282))
+    # merged_ds = merged_ds.sel(latitude=slice(24, 33), longitude=slice(272,282))
     merged_ds = merged_ds.sel(time=~((merged_ds['time.month'] == 2) & (merged_ds['time.day'] == 29)))  
     tensor_values = [merged_ds[var].values for var in merged_ds.data_vars if var in ['tp']]
     tensor_values = np.stack(tensor_values, axis=0)
     tensor = torch.tensor(tensor_values, dtype=torch.float32)
-    normalized_tensor = normalize_tensor(tensor)
+    normalized_tensor = tensor
     #normalized_tensor = normalized_tensor.permute(1,0,2,3)
     #self.block_dict[yr] = [normalized_tensor, onset_tensor]
     tensor = normalized_tensor.permute(1,0,2,3)

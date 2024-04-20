@@ -3,8 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 saved
+trained_models
 .vscode
-
+*.pt
+*.nc
+data
+climato_tensor.pt
 # C extensions
 *.so
 

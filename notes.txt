@@ -1,0 +1,1 @@
+killall -u  username  # for killing all the processes -9 for force termination optional

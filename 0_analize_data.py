@@ -1,12 +1,28 @@
+# %%
 import xarray as xr
-import netCDF4 as nc
+# import netCDF4 as nc
 import os
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import numpy as np
 import pandas as pd
+import torch
 
-#opening mslp 2002 example file
+# OZ 
+# Read tesnor file 
+file_name = 'climato_tensor.pt'
+tensor = torch.load(file_name)
+
+# Plot the sensor in a map with cartopy
+# Create a figure and axis with the PlateCarree projection
+projection = ccrs.PlateCarree()
+fig, ax = plt.subplots(subplot_kw={'projection': projection}, figsize=(10, 6))
+# Ploat tensor[0,0,:,:]
+ax.imshow(tensor[6,0,:,:] )
+plt.show()
+
+
+# %% opening mslp 2002 example file
 filepath = '/Net/elnino/data/obs/ERA5/global/daily/mslp_era5_day_2002.nc'
 ds = xr.open_dataset(filepath)
 print(ds)

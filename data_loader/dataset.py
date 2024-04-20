@@ -74,6 +74,14 @@ def date_subtract(day, num):
     result_date_str = result_date.strftime("%Y-%m-%d")
     return result_date_str
 
+def days_since_start_of_year(self,date_string):
+    # Convert the date string to a datetime object
+    date_object = datetime.strptime(date_string, "%Y-%m-%d")
+    
+    # Get the day of the year (1-indexed)
+    day_of_year = date_object.timetuple().tm_yday
+    
+    return day_of_year
 #----
 
 import torch
@@ -105,6 +113,7 @@ class NetCDFDataset(Dataset):
         self.x = []
         self.y = []
         self.samples = []
+        self.target_days = []
         self.samples_dict = {}
         self.xy_dict = {}
         self.load_data = self.load_data()
@@ -131,28 +140,39 @@ class NetCDFDataset(Dataset):
         
         return file_info_dict
     
+    
     def load_data(self):
         for yr in self.years:
-            for off in self.offsets:
+            for i in range(0, len(self.offsets), 5):
+                off = self.offsets[i]
                 onset = onset_mask_df.loc[onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
-                onset_tensor = torch.tensor(onset, dtype=torch.float32)
+                # onset_tensor = torch.tensor(onset, dtype=torch.float32)
                 msk_date = day_of_year_to_date(yr, onset)
+                
                 end_date = date_subtract(msk_date, off)
+                end_days = date_to_day_of_year(end_date)
+                
+                target_day = onset - end_days
+                self.target_days.append(onset - end_days)
                 start_date = date_subtract(end_date, 5)
                 time_slice = slice(start_date, end_date)
                 datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[yr].iloc[i]['filename']),)
                                                     for i in range(len(self.file_dict[yr]))]
                 merged_ds = xr.merge(datasets)
                 merged_ds =  merged_ds.sel(time=time_slice)
-                # merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
+                #merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
                 tensor_values = [merged_ds[var].values for var in merged_ds.data_vars if var in self.variables]
                 tensor_values = np.stack(tensor_values, axis=0)
                 tensor = torch.tensor(tensor_values, dtype=torch.float32)
                 normalized_tensor = normalize_tensor(tensor)
-                normalized_tensor = normalized_tensor.permute(1,0,2,3)
-                self.samples_dict[(yr,off)] = [normalized_tensor, onset_tensor]
-                self.samples.append((normalized_tensor, onset_tensor))
-            # return self.samples_dict
+                # The line `normalized_tensor = normalized_tensor.permute(1,0,2,3)` is rearranging the
+                # dimensions of the `normalized_tensor` tensor.
+                # normalized_tensor = normalized_tensor.permute(1,0,2,3)
+                self.samples_dict[(yr,off)] = [normalized_tensor, torch.tensor(target_day, dtype=torch.float32)]
+                self.samples.append((normalized_tensor, torch.tensor(target_day, dtype=torch.float32)))
+        return self.samples_dict
+
+     
     # def load_data(self):
     #     samples = []
     #     for yr in self.years:
@@ -194,12 +214,12 @@ class NetCDFDataset(Dataset):
         
 
     def __len__(self):
-        return len(self.samples_dict)
+        return len(self.samples)
 
     def __getitem__(self, index):
         year, offset = list(self.samples_dict.keys())[index]
         return self.samples_dict[(year, offset)]
-        # return self.samples[index]
+        #return self.samples[index]
         # normalized_tensor, onset = self.samples[index]
         # return normalized_tensor, onset
 
@@ -210,6 +230,9 @@ class NetCDFDataset(Dataset):
             batch = self.samples[i:i + batch_size]
             x_batch, y_batch = zip(*batch)  # Unzip the batch into x and y
             yield torch.stack(x_batch), torch.stack(y_batch)
+            
+            
+    
             
             
             
