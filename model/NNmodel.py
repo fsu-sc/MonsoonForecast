@@ -70,6 +70,35 @@ class DenseModel(nn.Module):
             x = self.relu(x)
         x = self.output_layer(x)  # Use the output layer directly
         return x
+    
+import torch
+  
+
+class LinearRegressionModel(nn.Module):
+    def __init__(self):
+        super(LinearRegressionModel, self).__init__()
+        self.fc1 = nn.Linear(1, 16)  # Input dimension is 1, output dimension is 1 (single output)
+        self.fc2 = nn.Linear(16, 1)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return x
+
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super(NeuralNetwork, self).__init__()
+        self.fc1 = nn.Linear(1, 64)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(64, 12)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
 
 # class EnhancedCNN(nn.Module):
 #     def __init__(self, p=0.3, num_classes=1, in_channels=7):

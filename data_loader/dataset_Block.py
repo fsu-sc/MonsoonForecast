@@ -78,8 +78,8 @@ class NetCDFDataset(Dataset):
         self.file_dict = self.createFileInfoDict()  # Create a dictionary of file information while loading
         self.offsets = offsets
         self.years = years
-        self.onset_mask_df = pd.read_csv("/unity/f2/aoleksy/MonsoonForecast/onset_pen_FL.csv", names=['Year', 'OnsetDay'])
-        self.climato_tensor = torch.load('/unity/f2/asugandhi/DIS/MonsoonForecast/climato_tensor.pt')
+        self.onset_mask_df = pd.read_csv("onset_pen_FL.csv", names=['Year', 'OnsetDay'])
+        self.climato_tensor = torch.load('climato_tensor.pt')
         # self.latitude_slice = slice(24, 33)  
         # self.longitude_slice = slice(272,282)  
         self.variables = variables
@@ -193,6 +193,9 @@ class NetCDFDataset(Dataset):
             # self.block_dict[yr] = [normalized_tensor, onset_tensor]
             # Should be one number
             sum_anomaly_by_batch = torch.sum(normalized_tensor[:,1,:,:], dim=(1, 2))
+            anom_mean = torch.mean(sum_anomaly_by_batch)
+            anom_sd = torch.std(sum_anomaly_by_batch)
+            sum_anomaly_by_batch = (sum_anomaly_by_batch - anom_mean) / anom_sd
             # Should be one number
             sum_by_batch = torch.sum(normalized_tensor[:,0,:,:], dim=(1, 2))
             new_tensor = torch.stack((sum_by_batch, sum_anomaly_by_batch), dim=-1)
@@ -244,17 +247,19 @@ class NetCDFDataset(Dataset):
     def __len__(self):
         return len(self.block_dict)
 
-    def __getitem__(self, index):
+    def __getitem__(self, yr_off_tuple):
         # Determine the year and offset based on the index
-        yr = self.years[index // len(self.offsets)]
-        off = self.offsets[index % len(self.offsets)]
-        
+        #yr = self.years[index // len(self.offsets)]
+        #off = self.offsets[index % len(self.offsets)]
+        yr, off = yr_off_tuple
+
         off_tensor = torch.tensor(off, dtype=torch.float32)
         shape = self.block_dict[yr][0].shape[0]
         slice_b = shape - off + 1
         slice_a = slice_b - 16
-        sum_tp_tensor = torch.sum(self.block_dict[yr][0][slice_a:slice_b,0], dim =0)
-        return sum_tp_tensor , off_tensor
+        #sum_tp_tensor = torch.sum(self.block_dict[yr][0][slice_a:slice_b,0], dim =0)
+        sum_anom_tensor = torch.sum(self.block_dict[yr][0][slice_a:slice_b,1], dim =0)
+        return sum_anom_tensor , off_tensor
 
 
     def shuffle(self):
