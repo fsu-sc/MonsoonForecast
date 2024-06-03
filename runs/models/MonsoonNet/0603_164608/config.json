@@ -1,14 +1,13 @@
 {
     "name": "MonsoonNet",
     "n_gpu": 1,
-
     "arch": {
-        "type": "EnhancedCNN",
+        "type": "NeuralNetwork",
         "args": {}
     },
     "data_loader": {
         "type": "NetCDFDataLoader",
-        "args":{
+        "args": {
             "data_dir": "Net/elnino/data/obs/ERA5/global/daily/",
             "batch_size": 128,
             "shuffle": true,
@@ -18,7 +17,7 @@
     },
     "optimizer": {
         "type": "Adam",
-        "args":{
+        "args": {
             "lr": 0.001,
             "weight_decay": 0,
             "amsgrad": true
@@ -26,7 +25,8 @@
     },
     "loss": "nll_loss",
     "metrics": [
-        "accuracy", "top_k_acc"
+        "accuracy",
+        "top_k_acc"
     ],
     "lr_scheduler": {
         "type": "StepLR",
@@ -37,14 +37,11 @@
     },
     "trainer": {
         "epochs": 100,
-
         "save_dir": "runs/",
         "save_period": 1,
         "verbosity": 2,
-        
         "monitor": "min val_loss",
         "early_stop": 10,
-
         "tensorboard": true
     }
 }

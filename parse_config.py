@@ -6,7 +6,7 @@ from operator import getitem
 from datetime import datetime
 from logger import setup_logging
 from utils import read_json, write_json
-
+import json
 
 class ConfigParser:
     def __init__(self, config, resume=None, modification=None, run_id=None):
@@ -19,7 +19,10 @@ class ConfigParser:
         :param run_id: Unique Identifier for training processes. Used to save checkpoints and training log. Timestamp is being used as default
         """
         # load config file and apply modification
-        self._config = _update_config(config, modification)
+        
+        with open(config) as f:
+            self._config = json.load(f)
+        # self._config = _update_config(config, modification)
         self.resume = resume
 
         # set save_dir where trained model and log will be saved.

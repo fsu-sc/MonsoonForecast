@@ -11,10 +11,36 @@ from trainer import Trainer
 from utils import prepare_device
 
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
-
+import importlib
 import torch.optim as optim
 import torch.nn as nn
+################# Loading value from config.json #######################
 
+optimizers = {
+    'Adam': torch.optim.Adam,
+    'SGD': torch.optim.SGD,
+    'RMSprop': torch.optim.RMSprop,
+    # Add more optimizers as needed
+}
+
+
+
+config = ConfigParser('config.json')
+arch = config['arch']['type']
+dataDir = config['data_loader']['args']['data_dir']
+batch_size = config['data_loader']['args']['batch_size'] 
+shuffle = config['data_loader']['args']['shuffle']
+validation_split = config['data_loader']['args']['validation_split']
+num_workers = config['data_loader']['args']['num_workers']
+optimizer_type = config['optimizer']['type']
+learning_rate = config['optimizer']['args']['lr'] 
+epochs = config['trainer']['epochs']
+ # # Dynamically import the model class
+ 
+model_class = getattr(importlib.import_module('model.NNmodel'), arch)
+
+
+################# Training #######################
 
 # fix random seeds for reproducibility
 SEED = 123
@@ -50,8 +76,12 @@ def main():
     train_loader = DataLoader(dataset, batch_size=32, sampler=train_sampler)
     val_loader = DataLoader(dataset, batch_size=32, sampler=val_sampler)
 
-    # build model architecture, then print to console
-    model = mod.EnhancedCNN()
+
+
+   
+    
+    # Initialize the model
+    model = model_class()
     
     # prepare for GPU training
     #if torch.cuda.device_count() > 1:
@@ -68,10 +98,10 @@ def main():
    
 
     # build optimizer, learning rate scheduler. delete every lines containing lr_scheduler for disabling scheduler
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optimizers[optimizer_type](model.parameters(), lr=learning_rate)
 
     # Number of epochs
-    epochs = 100
+    # epochs = epochs
     mc_samples = 10
 
     # Lists to store training and validation losses
