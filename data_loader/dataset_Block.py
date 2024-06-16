@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import Resize, Compose, ToTensor
 from torchvision.transforms.functional import to_pil_image, to_tensor
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
+from base import BaseDataLoader
 import torch
 from torch.utils.data import Dataset, DataLoader
 import xarray as xr
@@ -70,18 +71,15 @@ def date_subtract(day, num):
 
 class NetCDFDataset(Dataset):
     
-    def __init__(self, data_dir, 
-                 years, offsets, 
-                 variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850'],eval=False):
+    def __init__(self, data_dir, variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']):
         self.data_dir = data_dir
+        self.load_year_offsets(range(1990,2000), range(1,25))
         self.file_info_dict = {}
         self.file_dict = self.createFileInfoDict()  # Create a dictionary of file information while loading
-        self.offsets = offsets
-        self.years = years
-        self.onset_mask_df = pd.read_csv("onset_pen_FL.csv", names=['Year', 'OnsetDay'])
-        self.climato_tensor = torch.load('climato_tensor.pt')
-        # self.latitude_slice = slice(24, 33)  
-        # self.longitude_slice = slice(272,282)  
+        self.onset_mask_df = pd.read_csv("data/onset_pen_FL.csv", names=['Year', 'OnsetDay'])
+        self.climato_tensor = torch.load('data/climato_tensor.pt')
+        self.latitude_slice = slice(24, 33)  
+        self.longitude_slice = slice(272,282)  
         self.variables = variables
         self.patch_size = (224, 224)  # Patch size for spatial tokenization
         self.x = []
@@ -93,10 +91,15 @@ class NetCDFDataset(Dataset):
         self.xy_dict = {}
         self.block_dict = {}
         
+        
         if 'tp' in self.variables:
             self.tp_idx = self.variables.index('tp')
 
-        self.load_data = self.load_data()
+        self.load_data()
+    
+    def load_year_offsets(self, years, offsets):
+        self.years = years
+        self.offsets = offsets
         
         
        
@@ -247,11 +250,12 @@ class NetCDFDataset(Dataset):
     def __len__(self):
         return len(self.block_dict)
 
-    def __getitem__(self, yr_off_tuple):
+    def __getitem__(self, index):
         # Determine the year and offset based on the index
-        #yr = self.years[index // len(self.offsets)]
-        #off = self.offsets[index % len(self.offsets)]
-        yr, off = yr_off_tuple
+        print("IM HERE!!!!!!!!!!!")
+        yr = self.years[index // len(self.offsets)]
+        off = self.offsets[index % len(self.offsets)]
+        # yr, off = yr_off_tuple
 
         off_tensor = torch.tensor(off, dtype=torch.float32)
         shape = self.block_dict[yr][0].shape[0]
@@ -296,3 +300,10 @@ class NetCDFDataset(Dataset):
 
 
 #print("nothing")
+
+class DefaultDataLoader(BaseDataLoader):
+
+    def __init__(self, data_dir, batch_size, shuffle=True, validation_split=0.0, num_workers=1, training=True):
+        self.data_dir = data_dir
+        self.dataset = NetCDFDataset(self.data_dir)
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)

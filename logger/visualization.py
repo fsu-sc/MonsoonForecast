@@ -1,6 +1,6 @@
 import importlib
 from datetime import datetime
-
+import torch
 
 class TensorboardWriter():
     def __init__(self, log_dir, logger, enabled):
@@ -10,7 +10,7 @@ class TensorboardWriter():
         if enabled:
             log_dir = str(log_dir)
 
-            # Retrieve vizualization writer.
+            # Retrieve visualization writer.
             succeeded = False
             for module in ["torch.utils.tensorboard", "tensorboardX"]:
                 try:
@@ -59,13 +59,16 @@ class TensorboardWriter():
 
             def wrapper(tag, data, *args, **kwargs):
                 if add_data is not None:
+                    # Ensure data is not wrapped in a tensor if it's scalar
+                    if isinstance(data, torch.Tensor) and data.dim() == 0:
+                        data = data.item()  # Extract scalar value from tensor
                     # add mode(train/valid) tag
                     if name not in self.tag_mode_exceptions:
                         tag = '{}/{}'.format(tag, self.mode)
                     add_data(tag, data, self.step, *args, **kwargs)
             return wrapper
         else:
-            # default action for returning methods defined in this class, set_step() for instance.
+            # Default action for returning methods defined in this class, set_step() for instance.
             try:
                 attr = object.__getattr__(name)
             except AttributeError:

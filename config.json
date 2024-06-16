@@ -3,17 +3,17 @@
     "n_gpu": 1,
 
     "arch": {
-        "type": "EnhancedCNN",
+        "type": "NeuralNetwork",
         "args": {}
     },
     "data_loader": {
-        "type": "NetCDFDataLoader",
+        "type": "DefaultDataLoader",
         "args":{
-            "data_dir": "Net/elnino/data/obs/ERA5/global/daily/",
-            "batch_size": 128,
+            "data_dir": "/Net/elnino/data/obs/ERA5/global/daily/",
+            "batch_size": 1,
             "shuffle": true,
             "validation_split": 0.1,
-            "num_workers": 2
+            "num_workers": 1
         }
     },
     "optimizer": {

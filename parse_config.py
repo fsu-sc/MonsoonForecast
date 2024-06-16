@@ -6,7 +6,7 @@ from operator import getitem
 from datetime import datetime
 from logger import setup_logging
 from utils import read_json, write_json
-import json
+
 
 class ConfigParser:
     def __init__(self, config, resume=None, modification=None, run_id=None):
@@ -19,10 +19,7 @@ class ConfigParser:
         :param run_id: Unique Identifier for training processes. Used to save checkpoints and training log. Timestamp is being used as default
         """
         # load config file and apply modification
-        
-        with open(config) as f:
-            self._config = json.load(f)
-        # self._config = _update_config(config, modification)
+        self._config = _update_config(config, modification)
         self.resume = resume
 
         # set save_dir where trained model and log will be saved.
@@ -55,10 +52,23 @@ class ConfigParser:
         """
         Initialize this class from some cli arguments. Used in train, test.
         """
+        knwon_args, unknown = args.parse_known_args()
+        print("Known arguments:", knwon_args)
+        print("Unknown arguments:", unknown)
+        # Throw a warning if unknown arguments are given
+        if len(unknown) > 0:
+            print("Warning: Unknown arguments provided:", unknown)
+            # Remove unkonwn arguments
+
+
         for opt in options:
             args.add_argument(*opt.flags, default=None, type=opt.type)
         if not isinstance(args, tuple):
-            args = args.parse_args()
+            # OZ I'm mofifying this case. I'm not sure in which scenario the
+            # original code will come to here
+            # Previous sentence args = args.parse_args()
+            args = args.parse_known_args()
+            args = args[0]
 
         if args.device is not None:
             os.environ["CUDA_VISIBLE_DEVICES"] = args.device

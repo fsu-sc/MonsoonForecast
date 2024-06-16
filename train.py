@@ -1,46 +1,18 @@
+# %%
 import argparse
 import collections
 import torch
 import numpy as np
-import data_loader.data_loader as dl
+import threading
+import time
+from tqdm import tqdm
+import data_loader.dataset_Block as module_data
 import model.loss as module_loss
 import model.metric as module_metric
-import model.model as mod
+import model.NNmodel as module_arch
 from parse_config import ConfigParser
 from trainer import Trainer
 from utils import prepare_device
-
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
-import importlib
-import torch.optim as optim
-import torch.nn as nn
-################# Loading value from config.json #######################
-
-optimizers = {
-    'Adam': torch.optim.Adam,
-    'SGD': torch.optim.SGD,
-    'RMSprop': torch.optim.RMSprop,
-    # Add more optimizers as needed
-}
-
-
-
-config = ConfigParser('config.json')
-arch = config['arch']['type']
-dataDir = config['data_loader']['args']['data_dir']
-batch_size = config['data_loader']['args']['batch_size'] 
-shuffle = config['data_loader']['args']['shuffle']
-validation_split = config['data_loader']['args']['validation_split']
-num_workers = config['data_loader']['args']['num_workers']
-optimizer_type = config['optimizer']['type']
-learning_rate = config['optimizer']['args']['lr'] 
-epochs = config['trainer']['epochs']
- # # Dynamically import the model class
- 
-model_class = getattr(importlib.import_module('model.NNmodel'), arch)
-
-
-################# Training #######################
 
 # fix random seeds for reproducibility
 SEED = 123
@@ -49,133 +21,78 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(SEED)
 
-def main():
-    file_info_dict = dl.createFileInfoDict("/Net/elnino/data/obs/ERA5/global/daily/")
+# %% Read the args
+args = argparse.ArgumentParser(description='PyTorch Template')
+args.add_argument('-c', '--config', default='config.json', type=str,
+                    help='config file path (default: None)')
+args.add_argument('-r', '--resume', default=None, type=str,
+                    help='path to latest checkpoint (default: None)')
+args.add_argument('-d', '--device', default=None, type=str,
+                    help='indices of GPUs to enable (default: all)')
 
-    #Data loading instance
-    dataset = dl.NetCDFDataset(file_info_dict, "/Net/elnino/data/obs/ERA5/global/daily/")
+# custom cli options to modify configuration from default values given in json file.
+CustomArgs = collections.namedtuple('CustomArgs', 'flags type target')
+options = [
+    CustomArgs(['--lr', '--learning_rate'], type=float, target='optimizer;args;lr'),
+    CustomArgs(['--bs', '--batch_size'], type=int, target='data_loader;args;batch_size')
+]
+config = ConfigParser.from_args(args, options)
 
-    # Define the range of years for training and validation
-    train_years = range(2000, 2021)
-    val_years = range(1993, 2000)
+# %%
+logger = config.get_logger('train')
 
-    # Define the range of offsets
-    offsets = range(31, 41)  #updated based on Dr. Misra suggestion
-
-    # Create a list of tuples containing year and offset indices
-    train_indices =  [(year, offset) for year in train_years for offset in offsets]
-    val_indices = [(year, offset) for year in val_years for offset in offsets]
-
-
-    # Create samplers for training and validation sets
-    train_sampler = SubsetRandomSampler(train_indices)
-    val_sampler = SubsetRandomSampler(val_indices)
-
-
-    # Create data loaders for training and validation sets
-    train_loader = DataLoader(dataset, batch_size=32, sampler=train_sampler)
-    val_loader = DataLoader(dataset, batch_size=32, sampler=val_sampler)
+# setup data_loader instances
 
 
+def initialize_data_loader():
+    global data_loader, valid_data_loader
+    data_loader = config.init_obj('data_loader', module_data)
+    valid_data_loader = data_loader.split_validation()
 
-   
-    
-    # Initialize the model
-    model = model_class()
-    
-    # prepare for GPU training
-    #if torch.cuda.device_count() > 1:
-        #print(f"Using {torch.cuda.device_count()} GPUs")
-        #model = nn.DataParallel(model)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    print(device)
-    
+# Function to display the loading animation
+def show_loading_animation():
+    for _ in tqdm(iter(int, 1), desc="Loading data", ncols=100, mininterval=0.1):
+        time.sleep(0.1)
 
-    ################# Training #######################
-    # get function handles of loss and metrics
-    criterion = nn.MSELoss()
-   
+# Create and start a thread for the loading animation
+loading_thread = threading.Thread(target=show_loading_animation)
+loading_thread.daemon = True
+loading_thread.start()
 
-    # build optimizer, learning rate scheduler. delete every lines containing lr_scheduler for disabling scheduler
-    optimizer = optimizers[optimizer_type](model.parameters(), lr=learning_rate)
+# Initialize data_loader and valid_data_loader
+initialize_data_loader()
 
-    # Number of epochs
-    # epochs = epochs
-    mc_samples = 10
+# Once loading is done, you can terminate the animation
+loading_thread.join(timeout=0)
 
-    # Lists to store training and validation losses
-    train_losses = []
-    val_losses = []
 
-    # Training loop
-    for epoch in range(epochs):
-        # Set model to training mode
-        model.train()
-    
-        # Initialize lists to store predicted outputs and true values for training
-        train_predicted_outputs = []
-        train_true_values = []
-    
-        # Iterate over batches in the training data
-        for inputs, targets in train_loader:
-            inputs = inputs.to(device)
-            targets = targets.to(device)
-            outputs = model(inputs)
-        
-            prediction = outputs.squeeze()
 
-            # Append predicted outputs and true values for training
-            train_predicted_outputs.extend(prediction.tolist())
-            train_true_values.extend(targets.tolist())  
-    
-            # Compute the loss
-            loss = criterion(prediction, targets.float())
-        
-            # Zero gradients, backward pass, and optimize
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-    
-        # Compute training loss
-        train_loss = criterion(torch.tensor(train_predicted_outputs), torch.tensor(train_true_values))
-        train_losses.append(train_loss.item())
 
-        # Print training loss
-        if (epoch + 1) % 10 == 0:
-            print(f'Epoch [{epoch + 1}/{epochs}], Training Loss: {train_loss.item()}')
-        
-        # Validation
-        if (epoch + 1) % 10 == 0:
-            # Set model to evaluation mode
-            model.eval()
-        
-            # Initialize lists to store predicted outputs and true values for validation
-            val_predicted_outputs = []
-            val_true_values = []
+# build model architecture, then print to console
+model = config.init_obj('arch', module_arch)
+logger.info(model)
 
-            # Iterate over batches in the validation data
-            for val_inputs, val_targets in val_loader:
-                val_inputs = val_inputs.to(device)
-                val_targets = val_targets.to(device)
-                all_val_outputs = torch.zeros((mc_samples, len(val_inputs)))
-            
-        
-                val_outputs = model(val_inputs)
-            
+# prepare for (multi-device) GPU training
+device, device_ids = prepare_device(config['n_gpu'])
+model = model.to(device)
+if len(device_ids) > 1:
+    model = torch.nn.DataParallel(model, device_ids=device_ids)
 
-                # Compute mean prediction for validation
-                val_prediction = val_outputs.squeeze()
-            
-                # Append predicted outputs and true values for validation
-                val_predicted_outputs.extend(val_prediction.tolist())
-                val_true_values.extend(val_targets.tolist())
+# get function handles of loss and metrics
+criterion = getattr(module_loss, config['loss'])
+metrics = [getattr(module_metric, met) for met in config['metrics']]
 
-            # Compute validation loss
-            val_loss = criterion(torch.tensor(val_predicted_outputs), torch.tensor(val_true_values))
-            val_losses.append(val_loss.item())
-        
-            # Print validation loss
-            print(f'Validation Epoch [{epoch + 1}/{epochs}], Loss: {val_loss.item()}')
-            
-main()
+# build optimizer, learning rate scheduler. delete every lines containing lr_scheduler for disabling scheduler
+trainable_params = filter(lambda p: p.requires_grad, model.parameters())
+optimizer = config.init_obj('optimizer', torch.optim, trainable_params)
+lr_scheduler = config.init_obj('lr_scheduler', torch.optim.lr_scheduler, optimizer)
+
+# %%
+trainer = Trainer(model, criterion, metrics, optimizer,
+                    config=config,
+                    device=device,
+                    data_loader=data_loader,
+                    valid_data_loader=valid_data_loader,
+                    lr_scheduler=lr_scheduler)
+
+trainer.train()
