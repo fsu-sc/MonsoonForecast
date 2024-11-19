@@ -57,200 +57,40 @@ def date_subtract(day, num):
     result_date_str = result_date.strftime("%Y-%m-%d")
     return result_date_str
 
-#----
-
-
-
-
-# def normalize_tensor(tensor):
-#     mean = tensor.mean(dim=(0, 1, 2), keepdim=True)
-#     std = tensor.std(dim=(0, 1, 2), keepdim=True)
-#     normalized_tensor = (tensor - mean) / std
-#     return normalized_tensor
-
 class NetCDFDataset(Dataset):
     
-    def __init__(self, data_dir, 
-                 years, offsets, 
-                 variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850'],eval=False):
-        self.data_dir = data_dir
-        self.file_info_dict = {}
-        self.file_dict = self.createFileInfoDict()  # Create a dictionary of file information while loading
-        self.offsets = offsets
-        self.years = years
+    def __init__(self, max_offset = 12, lead_time = 10, start_year = 1979):
+        print("Reading data....")
         self.onset_mask_df = pd.read_csv("onset_pen_FL.csv", names=['Year', 'OnsetDay'])
         self.climato_tensor = torch.load('climato_tensor.pt')
-        # self.latitude_slice = slice(24, 33)  
-        # self.longitude_slice = slice(272,282)  
-        self.variables = variables
-        self.patch_size = (224, 224)  # Patch size for spatial tokenization
-        self.x = []
-        self.y = []
-        self.var_means = None
-        self.var_stds = None
-        self.samples = []
-        self.samples_dict = {}
-        self.xy_dict = {}
-        self.block_dict = {}
-        
-        if 'tp' in self.variables:
-            self.tp_idx = self.variables.index('tp')
+        self.total_years = self.climato_tensor.shape[0]
+        self.max_offset = max_offset
+        self.lead_time = lead_time
+        print("Done!")
+        # Generate a dataset that contains all the years and adjusted offsets
+        self.X = np.zeros((self.total_years*self.max_offset, self.lead_time))
+        self.Y = np.zeros(self.total_years*self.max_offset)
+        for yr in range(self.total_years):
+            onset_day = onset_mask_df.loc[onset_mask_df['Year'] == yr + start_year, 'OnsetDay'].values[0]
+            for offset in range(self.max_offset):
+                idx = yr*self.max_offset + offset
+                self.Y[idx] = offset
+                self.X[idx,:] = self.climato_tensor[yr][onset_day - self.lead_time - offset - 1: onset_day - offset - 1]
 
-        self.load_data = self.load_data()
-        
-        
-       
-    def createFileInfoDict(self):
-    #data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-        all_files = os.listdir(self.data_dir)
-
-        for filename in all_files:
-
-            parts = filename.split("_")
-            year = int(parts[-1].split(".")[0])
-            variable = parts[0]
-        
-            # If the year is not already a key in the dictionary, initialize an empty DataFrame
-            if year not in self.file_info_dict:
-                self.file_info_dict[year] = pd.DataFrame(columns=["filename", "variable"])
-        
-            # Append information to the DataFrame associated with the year
-            new_df = pd.DataFrame({"filename": [filename], "variable": [variable]})
-            self.file_info_dict[year] = pd.concat([self.file_info_dict[year], new_df], ignore_index=True)
-        
-        return self.file_info_dict
-    def loadERA5Data(self, year):
-        filenames = self.file_info_dict.get(year, [])
-        
-        # if not filenames:
-        #     print("No data available for the selected year.")
-        #     return None
-        
-        ds_list = []
-        for filename in filenames:
-            ds = xr.open_dataset(os.path.join(self.data_dir, filename), engine='netcdf4')
-            ds_list.append(ds)
-
-        # Concatenate all datasets along the time dimension
-        ds_year = xr.concat(ds_list, dim='time')
-        
-        return ds_year
-    
-    def plot_tp_vs_wind_speed(self, year):
-        # Load ERA5 data for the desired year(s)
-        ds = self.loadERA5Data(year)
-        if ds is None:
-            return
-        
-        # Calculate wind speed
-        wind_speed = np.sqrt(ds['u200']**2 + ds['v200']**2)
-
-        # Plot tp against wind speed
-        plt.figure(figsize=(10, 6))
-        plt.scatter(wind_speed.values.flatten(), ds['tp'].values.flatten(), alpha=0.5)
-        plt.xlabel('Wind Speed (m/s)')
-        plt.ylabel('Total Precipitation (mm)')
-        plt.title(f'Total Precipitation vs Wind Speed ({year})')
-        plt.grid(True)
+        # Plot the data for debugging purposes
+        yr = 0
+        plt.scatter(np.mean(self.X, axis = 1), self.Y, c=self.Y, cmap='viridis')
+        plt.xlabel("Mean accumulated anomaly of lead times")
+        plt.ylabel("Days to onset")
+        plt.savefig("scatter.png")
         plt.show()
-
-    
-
-
-    def load_data(self):
-        for yr in self.years:
-            onset = onset_mask_df.loc[onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
-            onset_tensor = torch.tensor(onset, dtype=torch.float32)
-            msk_date = day_of_year_to_date(yr, onset)
-            min_start_date = date_subtract(msk_date, (max(self.offsets) + 15))
-            #trying different window lengths: 16 days
-            max_end_date = date_subtract(msk_date, min(self.offsets))
-            time_slice = slice(min_start_date, max_end_date) #+1?
-            datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[yr].iloc[i]['filename']),)
-                                                    for i in range(len(self.file_dict[yr]))]
-            merged_ds = xr.merge(datasets)
-            # merged_ds = merged_ds.sel(time=time_slice, latitude=self.latitude_slice, longitude=self.longitude_slice)
-            merged_ds = merged_ds.sel(time=time_slice)
-            # tensor_values = [merged_ds[var].values for var in merged_ds.data_vars if var in self.variables]
-            stacked_tensors = []
-            for var_name in self.variables:
-                var_data = merged_ds[var_name].values
-                var_mean = np.nanmean(var_data)
-                var_std = np.nanstd(var_data)
-                var_normalized = (var_data - var_mean) / var_std
-                var_tensor = torch.tensor(var_normalized, dtype=torch.float32).unsqueeze(0)  # Add channel dimension
-                # var_tensor = torch.tensor(var_data, dtype=torch.float32).unsqueeze(0)  # Add channel dimension
-                stacked_tensors.append(var_tensor)
-            
-            # tensor_values = np.stack(stacked_tensors[0], axis=0)
-            # tensor = torch.tensor(tensor_values, dtype=torch.float32)
-            # normalized_tensor = normalize_tensor(tensor)
-            normalized_tensor = stacked_tensors[0].permute(1,0,2,3)
-            tp_tensor = stacked_tensors[0][:, self.tp_idx, :, :]
-            climate_slice = slice((onset - max(self.offsets) - 15), (onset - min(self.offsets) + 1))
-            anom_tensor = tp_tensor - self.climato_tensor[climate_slice, :, :, :]
-            normalized_tensor = torch.cat((normalized_tensor, anom_tensor), dim = 1)
-            # self.block_dict[yr] = [normalized_tensor, onset_tensor]
-            # Should be one number
-            sum_anomaly_by_batch = torch.sum(normalized_tensor[:,1,:,:], dim=(1, 2))
-            anom_mean = torch.mean(sum_anomaly_by_batch)
-            anom_sd = torch.std(sum_anomaly_by_batch)
-            sum_anomaly_by_batch = (sum_anomaly_by_batch - anom_mean) / anom_sd
-            # Should be one number
-            sum_by_batch = torch.sum(normalized_tensor[:,0,:,:], dim=(1, 2))
-            new_tensor = torch.stack((sum_by_batch, sum_anomaly_by_batch), dim=-1)
-            self.block_dict[yr] = [new_tensor, onset_tensor]    
-            
-            # The input should be two numbers
-            # self.block_dict[yr] = [normalized_tensor, onset_tensor]
-    # def load_data(self):
-    #     for yr in self.years:
-    #         onset = onset_mask_df.loc[onset_mask_df['Year'] == yr, 'OnsetDay'].iloc[0]
-    #         onset_tensor = torch.tensor(onset, dtype=torch.float32)
-    #         msk_date = day_of_year_to_date(yr, onset)
-    #         min_start_date = date_subtract(msk_date, (max(self.offsets) + 15))
-    #         max_end_date = date_subtract(msk_date, min(self.offsets))
-    #         time_slice = slice(min_start_date, max_end_date)
-
-    #         datasets = [xr.open_dataset(os.path.join(self.data_dir, self.file_dict[yr].iloc[i]['filename']))
-    #                     for i in range(len(self.file_dict[yr]))]
-    #         merged_ds = xr.merge(datasets)
-    #         merged_ds = merged_ds.sel(time=time_slice)
-
-    #         # Normalize and stack variables along the channel dimension
-    #         stacked_tensors = []
-    #         for var_name in self.variables:
-    #             var_data = merged_ds[var_name].values
-    #             var_mean = np.nanmean(var_data)
-    #             var_std = np.nanstd(var_data)
-    #             var_normalized = (var_data - var_mean) / var_std
-    #             var_tensor = torch.tensor(var_normalized, dtype=torch.float32).unsqueeze(0)  # Add channel dimension
-    #             stacked_tensors.append(var_tensor)
-
-    #         # Concatenate along the channel dimension
-    #         normalized_tensor = torch.cat(stacked_tensors, dim=0)
-    #         normalized_tensor = normalized_tensor.permute(1, 0, 2, 3)
-    #         # Slice tp_tensor for tp_idx
-    #         tp_tensor = normalized_tensor[:, self.tp_idx, :, :]
-
-    #         # Compute anomaly tensor
-    #         climate_slice = slice((onset - max(self.offsets) - 15), (onset - min(self.offsets) + 1))
-    #         anom_tensor = tp_tensor - self.climato_tensor[climate_slice, 0, :, :]
-    #         new_tensor = tp_tensor - self.climato_tensor[climate_slice, 0, :, :]
-    #         # Prepare normalized tensor
-
-    #         normalized_tensor = torch.cat((normalized_tensor, new_tensor.unsqueeze(1)), dim=1)
-
-    #         self.block_dict[yr] = [normalized_tensor, onset_tensor]
-
-
+        exit()
+       
     def __len__(self):
         return len(self.block_dict)
 
     def __getitem__(self, yr_off_tuple):
-        # Determine the year and offset based on the index
-        #yr = self.years[index // len(self.offsets)]
-        #off = self.offsets[index % len(self.offsets)]
+        # yr_off_tuple is a tuple of (year, offset)
         yr, off = yr_off_tuple
 
         off_tensor = torch.tensor(off, dtype=torch.float32)
@@ -271,28 +111,8 @@ class NetCDFDataset(Dataset):
             yield torch.stack(x_batch), torch.stack(y_batch)
             
 
-#data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-#year = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019]
-#offsets = range(1,25)
 
-#ds_indices =  [(yr, off) for yr in year for off in offsets]
-
-#print("Landmark before dataset init")        
-#ds = NetCDFDataset(data_dir, year, offsets)
-#print("Landmark before getitem call")
-#print("Sample get item output: ", ds.__getitem__(2002, 5))
-
-#ds_sampler = SubsetRandomSampler(ds_indices)
-#ds_loader = DataLoader(ds, batch_size=8, sampler=ds_sampler)
-
-
-#count = 0
-#for inputs, targets in ds_loader:
-#        count+=1
-#print("Count: ", count)
-#for i in range(1, 25, 2):
-#    ds.__getitem__(2002, i)
-#    print(i)
-
-
-#print("nothing")
+# Main
+if __name__ == "__main__":
+    offsets = 12
+    ds = NetCDFDataset(max_offset = offsets)
