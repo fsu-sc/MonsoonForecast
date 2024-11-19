@@ -12,20 +12,11 @@ from data_loader import dataset_Block as dB
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 import numpy as np
 
-data_dir = "/Net/elnino/data/obs/ERA5/global/daily/"
-train_year = range(2000,2009)
-test_year = range(2010,2019)
-offsets = range(1,13) # (1,13)
-
-train_ds_indices =  [(yr, off) for yr in train_year for off in offsets]
-test_ds_indices = [(yr, off) for yr in test_year for off in offsets]
-
 # %%
-train_data = dB.NetCDFDataset(data_dir,train_year,offsets,variables=["tp"])
-val_data = dB.NetCDFDataset(data_dir,test_year,offsets,variables=["tp"])
+offsets = 12
+train_data = dB.NetCDFDataset(max_offset = offsets)
+val_data = dB.NetCDFDataset(max_offset = offsets)
 
-     
-train_ds_sampler = SubsetRandomSampler(train_ds_indices)
 test_ds_sampler = SubsetRandomSampler(test_ds_indices)
 train_loader = DataLoader(train_data, batch_size=32, sampler=train_ds_sampler)
 val_loader = DataLoader(val_data, batch_size=32, sampler=test_ds_sampler)
