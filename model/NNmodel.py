@@ -41,34 +41,44 @@ class EnhancedCNN(nn.Module):
 
 # Generate a dense model with two inputs 10 neurons and 4 hidden layers with BN in between. Output linear, Relu in hidden layers
 class DenseModel(nn.Module):
-    def __init__(self, input_size=1, hidden_size=10, num_layers=40):
+    def __init__(self, input_size=1, hidden_size=10, num_layers=4, dropout_rate=0.1):
         super(DenseModel, self).__init__()
-        self.fc_layers = nn.ModuleList()
-        self.bn_layers = nn.ModuleList()
-        self.relu = nn.ReLU()
         
-        # Input layer
-        self.fc_layers.append(nn.Linear(input_size, hidden_size))
-        self.bn_layers.append(nn.BatchNorm1d(hidden_size))
+        self.layers = nn.ModuleList()
+        
+        # First layer
+        self.layers.append(nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_size),
+            nn.Dropout(dropout_rate)
+        ))
         
         # Hidden layers
-        for _ in range(num_layers):
-            self.fc_layers.append(nn.Linear(hidden_size, hidden_size))
-            self.bn_layers.append(nn.BatchNorm1d(hidden_size))
+        for _ in range(num_layers - 1):  # -1 because we already added first layer
+            self.layers.append(nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_size),
+                nn.Dropout(dropout_rate)
+            ))
         
         # Output layer
-        self.output_layer = nn.Linear(hidden_size, 1)  # Output only one value
+        self.output_layer = nn.Linear(hidden_size, 1)
         
     def forward(self, x):
-        # Add a batch dimension if input is scalar
+        x = x.float()
+        
+        # Ensure input has correct dimensions
         if x.dim() == 0:
             x = x.unsqueeze(0)
         
-        for fc, bn in zip(self.fc_layers, self.bn_layers):
-            x = fc(x)
-            x = bn(x)
-            x = self.relu(x)
-        x = self.output_layer(x)  # Use the output layer directly
+        # Pass through all layers
+        for layer in self.layers:
+            x = layer(x)
+            
+        # Output layer
+        x = self.output_layer(x)
         return x
     
 import torch

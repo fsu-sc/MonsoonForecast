@@ -25,7 +25,6 @@ np.random.seed(SEED)
 
 def main():
     file_info_dict = dl.createFileInfoDict("/Net/elnino/data/obs/ERA5/global/daily/")
-
     #Data loading instance
     dataset = dl.NetCDFDataset(file_info_dict, "/Net/elnino/data/obs/ERA5/global/daily/")
 

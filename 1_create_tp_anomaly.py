@@ -1,19 +1,19 @@
 # %%
 import xarray as xr
 import os
-import data_loader.dataset_Block as ds 
+# import data_loader.dataset_Block as ds 
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import numpy as np
 import torch
-import model.data_loader as dl
-import model.NNmodel as ECNN
-import torch.optim as optim
+# import model.data_loader as dl
+# import model.NNmodel as ECNN
+# import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import xarray as xr
 import pandas as pd
-import torchvision.models.vision_transformer as ViT
-import torchvision.models as models
+# import torchvision.models.vision_transformer as ViT
+# import torchvision.models as models
 
 def createFileInfoDict(data_dir, variables = ['tp', 'mslp', 't2m', 'u200', 'u850', 'v200', 'v850']):
     """
@@ -91,16 +91,16 @@ climo_rolling_mean_tp = torch.zeros(365) # Mean climatology total precipitation 
 roll_size = 30
 start_idx = roll_size//2
 end_idx = 365-roll_size//2
-test_year = 1990
+test_year = 1998
 
 for cur_year in range(start_year, end_year+1):
     cur_idx = cur_year-start_year
     for i in range(365-roll_size):
         year_rolling_mean_tp[cur_idx, i] = torch.mean(year_mean_tp[cur_idx, i:i+roll_size])
         climo_rolling_mean_tp[i] += year_rolling_mean_tp[cur_idx, i]
-    year_cum_tp_anomaly[cur_idx, :] = overall_mean_tp - year_rolling_mean_tp[cur_idx, :]
+    year_cum_tp_anomaly[cur_idx, :] = year_rolling_mean_tp[cur_idx, :] - overall_mean_tp
     # Make the cummulative sum for each year
-    # year_cum_tp_anomaly[cur_idx, :] = torch.cumsum(year_cum_tp_anomaly[cur_idx, :], dim=0)
+    year_cum_tp_anomaly[cur_idx, :] = torch.cumsum(year_cum_tp_anomaly[cur_idx, :], dim=0)
 
 climo_rolling_mean_tp = climo_rolling_mean_tp/len(range(start_year, end_year+1))
 # Plot the mean climatology tp tensor
@@ -111,6 +111,7 @@ plt.plot(range(start_idx, end_idx), year_rolling_mean_tp[test_year-start_year, s
 plt.axhline(overall_mean_tp, color='red', linestyle='--', label='overall mean')
 plt.title(f"Mean climatology tp for year {test_year}")
 plt.legend()
+plt.savefig("tp_anomaly.png")
 plt.show()
 
 # %%
