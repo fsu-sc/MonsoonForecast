@@ -85,32 +85,37 @@ for yr in range(start_year, end_year+1):
 # %%
 # Compute the mean climatology tp tensor using a rolling mean of 10 days
 year_cum_tp_anomaly = torch.zeros((end_year-start_year+1, 365)) # Main one. Cumulative tp anomaly of each year (years, 365 days)
+year_tp_anomaly = torch.zeros((end_year-start_year+1, 365)) # Cumulative tp anomaly of each year (years, 365 days)
 year_rolling_mean_tp = torch.zeros((end_year-start_year+1, 365)) # Mean total precipitation of each year (365 days)
 overall_mean_tp = torch.mean(year_mean_tp) # Overall mean total precipitation of all the years
 climo_rolling_mean_tp = torch.zeros(365) # Mean climatology total precipitation of all the years (365 days)
 roll_size = 30
 start_idx = roll_size//2
 end_idx = 365-roll_size//2
-test_year = 1990
+test_year = 2001
 
 for cur_year in range(start_year, end_year+1):
     cur_idx = cur_year-start_year
     for i in range(365-roll_size):
         year_rolling_mean_tp[cur_idx, i] = torch.mean(year_mean_tp[cur_idx, i:i+roll_size])
         climo_rolling_mean_tp[i] += year_rolling_mean_tp[cur_idx, i]
-    year_cum_tp_anomaly[cur_idx, :] = overall_mean_tp - year_rolling_mean_tp[cur_idx, :]
+    year_tp_anomaly[cur_idx, :] = year_rolling_mean_tp[cur_idx, :] - overall_mean_tp
+
     # Make the cummulative sum for each year
-    # year_cum_tp_anomaly[cur_idx, :] = torch.cumsum(year_cum_tp_anomaly[cur_idx, :], dim=0)
+    year_cum_tp_anomaly[cur_idx, :] = torch.cumsum(year_tp_anomaly[cur_idx, :], dim=0)
 
 climo_rolling_mean_tp = climo_rolling_mean_tp/len(range(start_year, end_year+1))
+# Make two plot 
+fig, axs = plt.subplots(2,1, figsize=(10,8))
 # Plot the mean climatology tp tensor
-plt.plot(range(start_idx, end_idx), year_cum_tp_anomaly[test_year-start_year, start_idx:end_idx], label='anomaly')
-plt.plot(range(start_idx, end_idx), climo_rolling_mean_tp[start_idx:end_idx], label='climo')
-plt.plot(range(start_idx, end_idx), year_rolling_mean_tp[test_year-start_year, start_idx:end_idx], label='year mean')
+axs[1].plot(range(start_idx, end_idx), year_cum_tp_anomaly[test_year-start_year, start_idx:end_idx], label='cum anomaly')
+axs[0].plot(range(start_idx, end_idx), year_tp_anomaly[test_year-start_year, start_idx:end_idx], label='anomaly')
+axs[0].plot(range(start_idx, end_idx), climo_rolling_mean_tp[start_idx:end_idx], label='climo')
+axs[0].plot(range(start_idx, end_idx), year_rolling_mean_tp[test_year-start_year, start_idx:end_idx], label='year mean')
 # Plot the overall mean tp tensor as a dashed horizontal line
 plt.axhline(overall_mean_tp, color='red', linestyle='--', label='overall mean')
-plt.title(f"Mean climatology tp for year {test_year}")
-plt.legend()
+axs[0].set_title(f"Mean climatology tp for year {test_year}")
+axs[0].legend()
 plt.show()
 
 # %%

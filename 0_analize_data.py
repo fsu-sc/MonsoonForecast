@@ -176,3 +176,4 @@ ax.set_ylabel('Latitude')
 
 plt.title('Florida Region Crop Plot of Total Precipitation for Jan 1 2002')
 plt.show()
+# %%
