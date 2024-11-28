@@ -27,7 +27,7 @@ def createFileInfoDict(data_dir):
 #---
 
 from datetime import datetime, timedelta
-onset_mask_df = pd.read_csv("/unity/f2/aoleksy/MonsoonForecast/onset_pen_FL.csv", names=['Year','OnsetDay'])
+onset_mask_df = pd.read_csv("/Net/work/ozavala/CODE/MonsoonForecast/onset_pen_FL.csv", names=['Year','OnsetDay'])
 
 def day_of_year_to_date(year, day_of_year):
     # Check if the year is a leap year
