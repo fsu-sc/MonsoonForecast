@@ -53,7 +53,7 @@ class NetCDFDataset(Dataset):
     
     def __init__(self, max_offset = 12, lead_time = 10, start_year = 1979, end_year = 2022,
                  onset_mask_file_name = None, climato_tensor_file_name = None, 
-                 fields = ['tp', 't2m'], num_examples_per_year = 10, random_offset = True):
+                 fields = ['tp', 't2m'], num_examples_per_year = 10, random_offset = True, include_gradient = False):
 
 
         print("Reading data....")
@@ -71,7 +71,11 @@ class NetCDFDataset(Dataset):
         self.lead_time = lead_time
         print("Done!")
         # Generate a dataset that contains all the years and adjusted offsets
-        self.X = np.zeros((self.total_years*num_examples_per_year, self.lead_time*tot_fields*2+1)) # +1 for the day of the year
+        if include_gradient:
+            input_size = self.lead_time*tot_fields*2+1
+        else:
+            input_size = self.lead_time*tot_fields+1
+        self.X = np.zeros((self.total_years*num_examples_per_year, input_size))
         self.Y = np.zeros(self.total_years*num_examples_per_year)
         for yr in range(self.total_years):
             onset_day = self.onset_mask_df.loc[self.onset_mask_df['Year'] == yr + start_year, 'OnsetDay'].values[0]
@@ -104,9 +108,11 @@ class NetCDFDataset(Dataset):
                     each_field_inputs_deriv.append(derv_values)
 
                 self.X[idx,0:self.lead_time*tot_fields] = np.concatenate(each_field_inputs)
-                self.X[idx,self.lead_time*tot_fields:self.lead_time*tot_fields*2] = np.concatenate(each_field_inputs_deriv)
+                if include_gradient:
+                    self.X[idx,self.lead_time*tot_fields:self.lead_time*tot_fields*2] = np.concatenate(each_field_inputs_deriv)
                 # Compute the derivative 
                 self.X[idx,-1] = onset_day - offset
+                # self.X[idx,-1] = 0
 
         print(f"X shape: {self.X.shape} Y shape: {self.Y.shape}")
        
@@ -132,11 +138,12 @@ if __name__ == "__main__":
     fields = ['tp', 't2m', 'u200']
     num_examples_per_year = 10
     random_offset = True
+    include_gradient = False
     ds = NetCDFDataset(max_offset = max_offset, lead_time = lead_time, start_year = start_year, end_year = end_year, 
                        onset_mask_file_name = onset_mask_file_name, 
                        climato_tensor_file_name = climato_tensor_file_name, 
                        fields = fields, num_examples_per_year = num_examples_per_year,
-                       random_offset = random_offset)
+                       random_offset = random_offset, include_gradient = include_gradient)
 
     # %%
     x, y = ds[:]
@@ -152,7 +159,10 @@ if __name__ == "__main__":
     # Make a figure wit 1 row and len(fields) columns
     # for cur_year in range(num_years):
     for cur_year in range(3):
-        fig, axs = plt.subplots(3, len(fields), figsize=(7*len(fields),10))
+        if include_gradient:
+            fig, axs = plt.subplots(3, len(fields), figsize=(7*len(fields),10))
+        else:
+            fig, axs = plt.subplots(2, len(fields), figsize=(7*len(fields),10))
         # Define the indices for the current year
         start_idx = cur_year*num_examples_per_year
         end_idx = (cur_year+1)*num_examples_per_year
@@ -186,15 +196,15 @@ if __name__ == "__main__":
             # Set axis labels for the last plot
             axs[1, cur_field].set_xlabel("Offset")
             axs[1, cur_field].set_ylabel(f"Anomaly of {field}")
-            # Plot the derivative
-            for i, cur_offset in enumerate(offsets[:4]):
-                axs[2, cur_field].scatter(range(lead_time), 
-                                        x_sorted[i,tot_fields*lead_time+cur_field*lead_time:tot_fields*lead_time+(cur_field+1)*lead_time],
-                                        label = f"{cur_offset}")
-            axs[2, cur_field].legend()
-            axs[2, cur_field].set_xlabel("Offset")
-            axs[2, cur_field].set_ylabel(f"Derivative of {field}")
-
+            if include_gradient:
+                # Plot the derivative
+                for i, cur_offset in enumerate(offsets[:4]):
+                    axs[2, cur_field].scatter(range(lead_time), 
+                                            x_sorted[i,tot_fields*lead_time+cur_field*lead_time:tot_fields*lead_time+(cur_field+1)*lead_time],
+                                            label = f"{cur_offset}")
+                axs[2, cur_field].legend()
+                axs[2, cur_field].set_xlabel("Offset")
+                axs[2, cur_field].set_ylabel(f"Derivative of {field}")
 
         plt.suptitle(f"Onset vs mean accumulated anomaly of lead times for {start_year + cur_year} \n (current offset: {input_curr_day}) \n (target offset: {true_offset})")
         plt.savefig(join(output_imgs_folder, f"scatter_{start_year + cur_year}.png"))

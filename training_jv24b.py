@@ -12,11 +12,13 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 from os.path import join
 # %% Model setup
-max_offset = 40 # How far in the future to predict 
-lead_time = 14  # How many input days to use
-num_examples_per_year = 20
+max_offset = 60 # How far in the future to predict 
+lead_time = 20  # How many input days to use
+num_examples_per_year = 50
+# fields = ['tp', 't2m', 'u200']
 fields = ['tp', 't2m', 'u200']
 tot_fields = len(fields)
+include_gradient = False
 
 onset_mask_file_name = "/Net/work/ozavala/CODE/MonsoonForecast/onset_pen_FL.csv"
 climato_tensor_file_name = "/Net/work/ozavala/CODE/MonsoonForecast/year_cum_tp_anomaly.pt"
@@ -31,15 +33,15 @@ random_offset = True
 data = dB.NetCDFDataset(max_offset = max_offset, lead_time = lead_time, start_year = start_year, end_year = end_year, 
                     onset_mask_file_name = onset_mask_file_name, 
                     climato_tensor_file_name = climato_tensor_file_name, fields = fields, 
-                    num_examples_per_year = num_examples_per_year, random_offset = random_offset)
+                    num_examples_per_year = num_examples_per_year, random_offset = random_offset, include_gradient = include_gradient)
 random_offset = False
 test_data = dB.NetCDFDataset(max_offset = max_offset, lead_time = lead_time, start_year = test_start_year, end_year = test_end_year, 
                     onset_mask_file_name = onset_mask_file_name, 
                     climato_tensor_file_name = climato_tensor_file_name, fields = fields, 
-                    num_examples_per_year = max_offset, random_offset = random_offset)
+                    num_examples_per_year = max_offset, random_offset = random_offset, include_gradient = include_gradient)
 
 # Calculate split indices based on years
-train_percentage = 0.85
+train_percentage = 0.90
 val_percentage = 1 - train_percentage
 total_samples = len(data)
 train_size = int(train_percentage * total_samples)
@@ -53,12 +55,29 @@ train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_data, batch_size= max_offset, shuffle=False)
 # The plus one is for the 'current' day of the year
-model = nModel.DenseModel(input_size=lead_time*tot_fields*2+1, hidden_size=1, num_layers=1, dropout_rate=0)
+if include_gradient:
+    input_size = lead_time*tot_fields*2+1
+else:
+    input_size = lead_time*tot_fields+1
+model = nModel.DenseModel(input_size=input_size, hidden_size=input_size*2, num_layers=10, dropout_rate=0.2)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 
-criterion2 = nn.MSELoss()
+class CustomLoss(nn.Module):
+    def __init__(self):
+        super(CustomLoss, self).__init__()
+        
+    def forward(self, pred, target):
+        # For now, equivalent to MSE
+        # Add larger weight when target is small by dividing by target+epsilon
+        # Using epsilon=0.1 to avoid division by very small numbers
+        epsilon = 0.1
+        return torch.mean((pred - target) ** 2 / (target/10 + epsilon))
+
+# custom_loss = CustomLoss()
+custom_loss = nn.MSELoss()
+mse_loss = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Initialize lists to store training and validation losses
@@ -85,7 +104,7 @@ for epoch in range(max_epochs):
         
         # Compute the loss
         optimizer.zero_grad()
-        loss = criterion2(outputs, targets)
+        loss = custom_loss(outputs, targets)
         
         loss.backward()
         optimizer.step()
@@ -110,7 +129,7 @@ for epoch in range(max_epochs):
             all_val_pairs.extend(list(zip(val_outputs.squeeze().tolist(), val_targets.squeeze().tolist())))
             
             # Compute validation loss
-            batch_loss = criterion2(val_outputs, val_targets)
+            batch_loss = mse_loss(val_outputs, val_targets)
             val_loss += batch_loss.item() * val_inputs.size(0)
         
         # Calculate average validation loss
@@ -150,11 +169,12 @@ for epoch in range(max_epochs):
 
 print(f"Stopped at epoch {epoch} with min val loss {min_val_loss:.6f} at epoch {min_val_loss_epoch}")
 # %% Test
+model.load_state_dict(best_model)
 model.eval()
 test_loss = 0
 rmse_per_offset = {str(offset): [] for offset in range(max_offset)}
 all_rmses = []
-do_plot = True
+do_plot = False
 with torch.no_grad():
     batch_idx = 0
     for test_inputs, test_targets in test_loader:
@@ -162,10 +182,10 @@ with torch.no_grad():
         test_inputs, test_targets = test_inputs.to(device), test_targets.to(device)
         test_outputs = model(test_inputs)
         test_targets = test_targets.unsqueeze(-1)
-        test_loss += criterion2(test_outputs, test_targets).item()
-        all_rmses.append(np.sqrt(criterion2(test_outputs, test_targets).item()))
+        test_loss += mse_loss(test_outputs, test_targets).item()
+        all_rmses.append(np.sqrt(custom_loss(test_outputs, test_targets).item()))
         for idx_offset, cur_offset in enumerate(range(max_offset)):
-            rmse_per_offset[str(idx_offset)].append(np.sqrt(criterion2(test_outputs[idx_offset], test_targets[idx_offset]).item()))
+            rmse_per_offset[str(idx_offset)].append(np.sqrt(custom_loss(test_outputs[idx_offset], test_targets[idx_offset]).item()))
             print(f"Output value: {test_outputs[idx_offset].squeeze().tolist():.1f} Target value: {test_targets[idx_offset].squeeze().tolist():.1f}")
         # Plot the inputs and outputs and the targets
         examples_to_plot = num_examples_per_year
@@ -193,10 +213,17 @@ print(f"Test RMSE: {np.sqrt(test_loss/len(test_loader)):.4f}")
 # %%
 # Plot the RMSE per offset in a boxplot
 fig, ax = plt.subplots(figsize=(20,5))
-ax.boxplot(list(rmse_per_offset.values()))
+# Remove outliers
+rmse_per_offset = {offset: [rmse for rmse in rmse_values if rmse < 50] for offset, rmse_values in rmse_per_offset.items()}
+# Create scatter plot of RMSE values per offset
+for offset, rmse_values in rmse_per_offset.items():
+    ax.scatter([int(offset)] * len(rmse_values), rmse_values, alpha=0.5)
+
+# ax.boxplot(list(rmse_per_offset.values()))
 ax.set_xlabel("Offset")
 ax.set_ylabel("RMSE")
 plt.show()
 # %% List all the RMSEs
 for idx_to_plot, cur_rmse in enumerate(all_rmses):
     print(f"RMSE year {idx_to_plot+test_start_year}: {cur_rmse:.2f}")
+# %%
